@@ -1,0 +1,32 @@
+{
+  "input": "Ol?, meu pedido #4411 chegou com a caneca azul quebrada e a caixa danificada. Podem enviar outra?",
+  "questions": [
+    {
+      "name": "is_damaged",
+      "type": "yes_no",
+      "instructions": "Does the customer report a damaged or broken item?",
+      "trueWhen": "item arrived broken, cracked, damaged, quebrada, danificada",
+      "falseWhen": "item arrived fine, question unrelated to damage"
+    },
+    {
+      "name": "queue",
+      "type": "choice",
+      "instructions": "Which support queue should handle this message?",
+      "options": [
+        {"value": "billing",  "description": "payments, invoices, refund, reembolso"},
+        {"value": "shipping", "description": "delivery, tracking, broken or damaged items, quebrada, danificada"},
+        {"value": "technical","description": "login, bugs, app errors"}
+      ]
+    },
+    {
+      "name": "urgency",
+      "type": "score",
+      "instructions": "How urgent is this message?",
+      "options": [
+        {"value": "low",    "description": "general question, no impact"},
+        {"value": "medium", "description": "customer impacted, refund or replacement needed"},
+        {"value": "high",   "description": "legal threat, safety issue, outage"}
+      ]
+    }
+  ]
+}
