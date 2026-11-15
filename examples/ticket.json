@@ -1,5 +1,5 @@
 {
-  "input": "Ol?, meu pedido #4411 chegou com a caneca azul quebrada e a caixa danificada. Podem enviar outra?",
+  "input": "Olá, meu pedido #4411 chegou com a caneca azul quebrada e a caixa danificada. Podem enviar outra?",
   "questions": [
     {
       "name": "is_damaged",

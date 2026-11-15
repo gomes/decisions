@@ -34,6 +34,17 @@ class MainTest {
     }
 
     @Test
+    void exampleIsWrittenAsUtf8() {
+        var bytes = new ByteArrayOutputStream();
+        int code = Main.run(new String[]{"example"}, Main.utf8(bytes), Main.utf8(new ByteArrayOutputStream()),
+                ProviderRegistry.fromEnvironment(Map.of()));
+        assertEquals(0, code);
+        String text = bytes.toString(java.nio.charset.StandardCharsets.UTF_8);
+        assertTrue(text.contains("Olá"), text);
+        assertFalse(text.contains("Ol?"));
+    }
+
+    @Test
     void decideFromFile(@TempDir Path dir) throws Exception {
         Path f = dir.resolve("req.json");
         Files.writeString(f, RequestCodec.EXAMPLE);

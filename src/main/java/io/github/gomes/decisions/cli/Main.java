@@ -8,7 +8,10 @@ import io.github.gomes.decisions.server.DecisionServer;
 import io.github.gomes.decisions.spi.DecisionException;
 import io.github.gomes.decisions.spi.DecisionProvider;
 
+import java.io.FileDescriptor;
+import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.OutputStream;
 import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -44,7 +47,17 @@ public final class Main {
     }
 
     public static void main(String[] args) {
-        System.exit(run(args, System.out, System.err, ProviderRegistry.fromEnvironment()));
+        // JSON is always UTF-8; don't let the terminal locale (e.g. POSIX/ASCII) turn "á" into "?".
+        PrintStream out = utf8(new FileOutputStream(FileDescriptor.out));
+        PrintStream err = utf8(new FileOutputStream(FileDescriptor.err));
+        int code = run(args, out, err, ProviderRegistry.fromEnvironment());
+        out.flush();
+        err.flush();
+        System.exit(code);
+    }
+
+    static PrintStream utf8(OutputStream stream) {
+        return new PrintStream(stream, true, StandardCharsets.UTF_8);
     }
 
     static int run(String[] args, PrintStream out, PrintStream err, ProviderRegistry registry) {
