@@ -1,0 +1,14 @@
+{
+  "input": "Foto enviada pelo cliente junto com o pedido de troca.",
+  "data": {"order": 4411, "customerTier": "gold", "daysSinceDelivery": 2},
+  "images": ["https://example.com/uploads/mug.jpg"],
+  "questions": [
+    {"name": "visible_damage", "type": "yes_no", "instructions": "Does the photo show visible damage to the product?"},
+    {"name": "action", "type": "choice", "instructions": "What should we do next?",
+     "options": [
+       {"value": "replace", "description": "Damage visible and within 30 days"},
+       {"value": "refund",  "description": "Damage visible, customer asked for money back"},
+       {"value": "human",   "description": "Unclear photo or policy exception"}
+     ]}
+  ]
+}
