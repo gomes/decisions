@@ -69,6 +69,14 @@ class GeminiDecisionsProviderTest {
         assertThat(mock.body().at("/questions/queue/criteria").isObject())
                 .as("choice options stay an id -> description object").isTrue();
 
+        // Real API: 400 "Unknown parameter 'true' at 'questions.is_damaged.criteria'"; the SDK's NoulCriteria
+        // uses true_description / false_description.
+        var isDamaged = mock.body().at("/questions/is_damaged");
+        assertThat(isDamaged.at("/criteria/true_description").asString()).isEqualTo("broken or cracked");
+        assertThat(isDamaged.at("/criteria/false_description").asString()).isEqualTo("fine");
+        assertThat(isDamaged.at("/criteria").propertyNames()).containsExactly("true_description", "false_description");
+        assertThat(isDamaged.get("instructions").asString()).isEqualTo("Is the item damaged?");
+
         var severity = r.answer("severity");
         assertThat(severity.value()).isEqualTo("medium");
         assertThat(severity.score()).isEqualTo(1.12);
@@ -86,6 +94,25 @@ class GeminiDecisionsProviderTest {
         assertThat(b.at("/input/0/type").asString()).isEqualTo("text");
         assertThat(b.at("/input/1/type").asString()).isEqualTo("image");
         assertThat(b.at("/input/1/uri").asString()).isEqualTo("https://example.com/mug.jpg");
+        assertThat(b.at("/input/1/mime_type").asString()).isEqualTo("image/jpeg");
+    }
+
+    @Test
+    void dataUrisAreSentAsInlineBase64() {
+        var part = tools.jackson.databind.json.JsonMapper.shared().createObjectNode();
+        GeminiDecisionsProvider.imagePart(part, "data:image/png;base64,iVBORw0KGgo=");
+        assertThat(part.toString()).isEqualTo("{\"type\":\"image\",\"data\":\"iVBORw0KGgo=\",\"mime_type\":\"image/png\"}");
+    }
+
+    @Test
+    void blockedInputIsReportedInsteadOfMissingAnswers() {
+        mock.server.expect(mock.captureBody()).andRespond(withSuccess("""
+                {"prompt_feedback": {"block_reason": "SAFETY", "block_reason_message": "unsafe content"}}
+                """, MediaType.APPLICATION_JSON));
+        var provider = new GeminiDecisionsProvider("g-key", null, null, mock.restClient);
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> provider.decide(TestFixtures.ticket()))
+                .isInstanceOf(DecisionException.class)
+                .hasMessage("[gemini] input blocked by content filter: SAFETY (unsafe content)");
     }
 
     @Test
