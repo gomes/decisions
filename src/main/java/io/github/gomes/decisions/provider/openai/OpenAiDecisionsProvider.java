@@ -9,6 +9,7 @@ import io.github.gomes.decisions.provider.Answers;
 import io.github.gomes.decisions.provider.Capabilities;
 import io.github.gomes.decisions.provider.DecisionException;
 import io.github.gomes.decisions.provider.HttpDecisionProvider;
+import io.github.gomes.decisions.provider.systemone.SystemOneCodec;
 import org.springframework.web.client.RestClient;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.node.ArrayNode;
@@ -93,7 +94,7 @@ public class OpenAiDecisionsProvider extends HttpDecisionProvider {
                 case SCORE -> "score";
             });
             n.put("name", q.name());
-            n.put("instructions", instructions(q));
+            n.put("instructions", SystemOneCodec.instructionsWithCriteria(q));
             if (q.type().hasOptions()) {
                 ArrayNode opts = n.putArray(q.type() == QuestionType.SCORE ? "levels" : "choices");
                 for (Option o : q.options()) {
@@ -103,14 +104,6 @@ public class OpenAiDecisionsProvider extends HttpDecisionProvider {
             }
         }
         return body;
-    }
-
-    /** Predicates have no separate true/false criteria, so they are folded into the instructions. */
-    private static String instructions(Question q) {
-        StringBuilder sb = new StringBuilder(q.instructions());
-        if (q.trueWhen() != null) sb.append("\nTrue when: ").append(q.trueWhen());
-        if (q.falseWhen() != null) sb.append("\nFalse when: ").append(q.falseWhen());
-        return sb.toString();
     }
 
     @Override
