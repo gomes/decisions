@@ -4,6 +4,7 @@ import io.github.gomes.decisions.domain.Answer;
 import io.github.gomes.decisions.domain.DecisionRequest;
 import io.github.gomes.decisions.domain.Option;
 import io.github.gomes.decisions.domain.Question;
+import io.github.gomes.decisions.domain.QuestionType;
 import io.github.gomes.decisions.provider.Answers;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
@@ -25,6 +26,9 @@ import java.util.List;
  * }</pre>
  *
  * Answers come back under {@code answers.<name>} (or at the top level, keyed by name).
+ *
+ * <p>Gemini differs only for score questions: {@code criteria} is a list of level labels, lowest first, and
+ * level probabilities come back keyed by level index ({@code "0"}, {@code "1"}, ...) with a {@code legend}.
  */
 public final class SystemOneCodec {
 
@@ -34,6 +38,14 @@ public final class SystemOneCodec {
     }
 
     public static ObjectNode questions(List<Question> questions) {
+        return questions(questions, false);
+    }
+
+    /**
+     * @param scoreLevelsAsList Gemini takes score levels as an ordered list of strings
+     *                          ({@code ["low: ...", "high: ..."]}) instead of a name-keyed object
+     */
+    public static ObjectNode questions(List<Question> questions, boolean scoreLevelsAsList) {
         ObjectNode out = JSON.createObjectNode();
         for (Question q : questions) {
             ObjectNode n = out.putObject(q.name());
@@ -43,7 +55,12 @@ public final class SystemOneCodec {
                 case SCORE -> "score";
             });
             n.put("instructions", q.instructions());
-            if (q.type().hasOptions()) {
+            if (q.type() == QuestionType.SCORE && scoreLevelsAsList) {
+                var levels = n.putArray("criteria");
+                for (Option o : q.options()) {
+                    levels.add(o.description().isBlank() ? o.value() : o.value() + ": " + o.description());
+                }
+            } else if (q.type().hasOptions()) {
                 // Insertion order is preserved: for score questions this is lowest -> highest.
                 ObjectNode c = n.putObject("criteria");
                 for (Option o : q.options()) {

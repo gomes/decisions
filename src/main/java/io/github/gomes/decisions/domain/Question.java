@@ -28,7 +28,7 @@ public record Question(
         @NotBlank @Pattern(regexp = NAME_PATTERN, message = "{decisions.question.name}") String name,
         @NotNull QuestionType type,
         @NotBlank @Size(max = 4000) String instructions,
-        @Valid @Size(max = MAX_OPTIONS) List<Option> options,
+        @Size(max = MAX_OPTIONS) List<@Valid Option> options,
         @Size(max = 2000) String trueWhen,
         @Size(max = 2000) String falseWhen) {
 

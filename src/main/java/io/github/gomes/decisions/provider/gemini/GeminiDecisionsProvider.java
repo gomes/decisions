@@ -19,6 +19,7 @@ import java.util.Map;
  *
  * <p>Body accepts only {@code model}, {@code input} and {@code questions} (a map keyed by name, types
  * {@code noul | choice | score}); up to 1,000 questions per call and 2–255 options per choice.
+ * Score levels are sent as an ordered list of strings (lowest first), not as an object.
  * The input is multimodal: plain text is sent as a string, text + images as a list of parts.
  */
 public class GeminiDecisionsProvider extends HttpDecisionProvider {
@@ -53,7 +54,7 @@ public class GeminiDecisionsProvider extends HttpDecisionProvider {
                 if (mime != null) p.put("mime_type", mime);
             }
         }
-        body.set("questions", SystemOneCodec.questions(request.questions()));
+        body.set("questions", SystemOneCodec.questions(request.questions(), true));
         return body;
     }
 

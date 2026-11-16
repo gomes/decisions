@@ -45,6 +45,39 @@ class GeminiDecisionsProviderTest {
         assertThat(r.answer("severity").value()).isEqualTo("high");
     }
 
+    /** Real API: 400 "The value is invalid for 'questions.urgency.criteria'. Expected string" for an object. */
+    @Test
+    void scoreLevelsAreAnOrderedListAndIndexKeyedProbabilitiesAreMapped() {
+        mock.server.expect(mock.captureBody()).andRespond(withSuccess("""
+                {"answers": {
+                   "is_damaged": {"noul": 0.98, "confidence": 0.98},
+                   "queue": {"choice": "shipping", "probabilities": {"billing": 0.1, "shipping": 0.9}, "confidence": 0.9},
+                   "severity": {"score": 1.12,
+                                "probabilities": {"0": 0.05, "1": 0.78, "2": 0.17},
+                                "legend": {"0": "low", "1": "medium", "2": "high: outage"},
+                                "confidence": 0.78}
+                 }}
+                """, MediaType.APPLICATION_JSON));
+
+        DecisionResult r = new GeminiDecisionsProvider("g-key", null, null, mock.restClient)
+                .decide(TestFixtures.ticketWithLevelDescriptions());
+
+        var criteria = mock.body().at("/questions/severity/criteria");
+        assertThat(criteria.isArray()).isTrue();
+        assertThat(criteria.values()).extracting(n -> n.asString())
+                .containsExactly("low", "medium", "high: outage");
+        assertThat(mock.body().at("/questions/queue/criteria").isObject())
+                .as("choice options stay an id -> description object").isTrue();
+
+        var severity = r.answer("severity");
+        assertThat(severity.value()).isEqualTo("medium");
+        assertThat(severity.score()).isEqualTo(1.12);
+        assertThat(severity.probabilities()).containsExactly(
+                org.assertj.core.api.Assertions.entry("low", 0.05),
+                org.assertj.core.api.Assertions.entry("medium", 0.78),
+                org.assertj.core.api.Assertions.entry("high", 0.17));
+    }
+
     @Test
     void imagesBecomeParts() {
         mock.server.expect(mock.captureBody()).andRespond(withSuccess(REPLY, MediaType.APPLICATION_JSON));
