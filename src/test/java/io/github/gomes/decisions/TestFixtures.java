@@ -23,6 +23,15 @@ public final class TestFixtures {
                 .build();
     }
 
+    /** Same as {@link #ticket()}, but the top severity level has a description. */
+    public static DecisionRequest ticketWithLevelDescriptions() {
+        DecisionRequest t = ticket();
+        var questions = new java.util.ArrayList<>(t.questions());
+        questions.set(2, Question.score("severity", "How severe?",
+                Option.of("low"), Option.of("medium"), Option.of("high", "outage")));
+        return new DecisionRequest(t.input(), null, null, questions, null);
+    }
+
     public static DecisionRequest ticketWithImage() {
         DecisionRequest t = ticket();
         return new DecisionRequest(t.input(), t.data(), List.of("https://example.com/mug.jpg"), t.questions(), null);

@@ -26,7 +26,7 @@ public record DecisionRequest(
         @Size(max = 200_000) String input,
         JsonNode data,
         @Size(max = 16) List<@Size(max = 10_000_000) String> images,
-        @Valid @NotEmpty(message = "{decisions.request.questions}") @Size(max = 1000) List<Question> questions,
+        @NotEmpty(message = "{decisions.request.questions}") @Size(max = 1000) List<@Valid Question> questions,
         @Size(max = 200) String model) {
 
     public DecisionRequest {

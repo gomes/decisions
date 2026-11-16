@@ -73,12 +73,15 @@ public final class Answers {
             }
         }
 
+        probs = byOptionValue(q.options(), probs);
+
         String value = firstString(node, isScore
                 ? List.of("level", "label", "value", "choice", "answer")
                 : List.of("choice", "value", "label", "answer", "selected"));
         Double score = isScore ? number(node, "score") : null;
 
-        if (value == null && !probs.isEmpty()) {
+        value = resolveOption(q.options(), value);
+        if ((value == null || !isOption(q.options(), value)) && !probs.isEmpty()) {
             value = probs.entrySet().stream().max(Map.Entry.comparingByValue()).orElseThrow().getKey();
         }
         if (value == null && isScore && score != null) {
@@ -97,6 +100,50 @@ public final class Answers {
             confidence = margin(probs);
         }
         return new Answer(q.name(), q.type(), value, null, score, probs.isEmpty() ? null : probs, confidence);
+    }
+
+    /**
+     * When every key is a level/option index ({@code "0"}, {@code "1"}, ...) instead of an option value, as
+     * Gemini does for score questions, re-key the map by option value.
+     */
+    static Map<String, Double> byOptionValue(List<Option> options, Map<String, Double> probs) {
+        if (probs.isEmpty() || options.stream().anyMatch(o -> probs.containsKey(o.value()))) {
+            return probs;
+        }
+        Map<String, Double> out = new LinkedHashMap<>();
+        for (Map.Entry<String, Double> e : probs.entrySet()) {
+            int idx;
+            try {
+                idx = Integer.parseInt(e.getKey().trim());
+            } catch (NumberFormatException notAnIndex) {
+                return probs;
+            }
+            if (idx < 0 || idx >= options.size()) {
+                return probs;
+            }
+            out.put(options.get(idx).value(), e.getValue());
+        }
+        return out;
+    }
+
+    /** Maps an index ("2") or a sent label ("high: ...") back to the option value; otherwise returns it as is. */
+    static String resolveOption(List<Option> options, String raw) {
+        if (raw == null || isOption(options, raw)) {
+            return raw;
+        }
+        String trimmed = raw.trim();
+        if (trimmed.matches("\\d+")) {
+            int idx = Integer.parseInt(trimmed);
+            if (idx < options.size()) return options.get(idx).value();
+        }
+        for (Option o : options) {
+            if (trimmed.startsWith(o.value() + ":")) return o.value();
+        }
+        return raw;
+    }
+
+    private static boolean isOption(List<Option> options, String value) {
+        return options.stream().anyMatch(o -> o.value().equals(value));
     }
 
     /** Accepts {@code {"a":0.7,"b":0.3}} or {@code [{"value":"a","probability":0.7}, ...]}. */

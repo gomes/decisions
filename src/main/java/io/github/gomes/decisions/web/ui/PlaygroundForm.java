@@ -25,9 +25,8 @@ public class PlaygroundForm {
     /** Optional image URLs, one per line. */
     private String images;
 
-    @Valid
     @NotEmpty(message = "{decisions.request.questions}")
-    private List<QuestionForm> questions = new ArrayList<>();
+    private List<@Valid QuestionForm> questions = new ArrayList<>();
 
     public List<String> getProviders() { return providers; }
     public void setProviders(List<String> providers) { this.providers = providers; }
