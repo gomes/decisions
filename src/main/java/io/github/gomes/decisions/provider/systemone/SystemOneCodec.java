@@ -1,13 +1,13 @@
 package io.github.gomes.decisions.provider.systemone;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import io.github.gomes.decisions.http.JsonHttp;
-import io.github.gomes.decisions.model.Answer;
-import io.github.gomes.decisions.model.DecisionRequest;
-import io.github.gomes.decisions.model.Option;
-import io.github.gomes.decisions.model.Question;
+import io.github.gomes.decisions.domain.Answer;
+import io.github.gomes.decisions.domain.DecisionRequest;
+import io.github.gomes.decisions.domain.Option;
+import io.github.gomes.decisions.domain.Question;
 import io.github.gomes.decisions.provider.Answers;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.json.JsonMapper;
+import tools.jackson.databind.node.ObjectNode;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -28,11 +28,13 @@ import java.util.List;
  */
 public final class SystemOneCodec {
 
+    private static final JsonMapper JSON = JsonMapper.shared();
+
     private SystemOneCodec() {
     }
 
     public static ObjectNode questions(List<Question> questions) {
-        ObjectNode out = JsonHttp.MAPPER.createObjectNode();
+        ObjectNode out = JSON.createObjectNode();
         for (Question q : questions) {
             ObjectNode n = out.putObject(q.name());
             n.put("type", switch (q.type()) {
@@ -41,21 +43,16 @@ public final class SystemOneCodec {
                 case SCORE -> "score";
             });
             n.put("instructions", q.instructions());
-            switch (q.type()) {
-                case YES_NO -> {
-                    if (q.trueWhen() != null || q.falseWhen() != null) {
-                        ObjectNode c = n.putObject("criteria");
-                        if (q.trueWhen() != null) c.put("true", q.trueWhen());
-                        if (q.falseWhen() != null) c.put("false", q.falseWhen());
-                    }
+            if (q.type().hasOptions()) {
+                // Insertion order is preserved: for score questions this is lowest -> highest.
+                ObjectNode c = n.putObject("criteria");
+                for (Option o : q.options()) {
+                    c.put(o.value(), o.description().isBlank() ? o.value() : o.description());
                 }
-                case CHOICE, SCORE -> {
-                    // Insertion order is preserved: for score questions this is lowest -> highest.
-                    ObjectNode c = n.putObject("criteria");
-                    for (Option o : q.options()) {
-                        c.put(o.value(), o.description().isBlank() ? o.value() : o.description());
-                    }
-                }
+            } else if (q.trueWhen() != null || q.falseWhen() != null) {
+                ObjectNode c = n.putObject("criteria");
+                if (q.trueWhen() != null) c.put("true", q.trueWhen());
+                if (q.falseWhen() != null) c.put("false", q.falseWhen());
             }
         }
         return out;
@@ -63,11 +60,10 @@ public final class SystemOneCodec {
 
     /** Text when there is text; the raw JSON object when only structured data was given. */
     public static JsonNode state(DecisionRequest request) {
-        boolean hasText = request.input() != null && !request.input().isBlank();
-        if (!hasText && request.hasData()) {
+        if (!request.hasText() && request.hasData()) {
             return request.data();
         }
-        return JsonHttp.MAPPER.getNodeFactory().textNode(request.textWithData());
+        return JSON.getNodeFactory().stringNode(request.textWithData());
     }
 
     public static List<Answer> answers(String provider, DecisionRequest request, JsonNode response) {

@@ -1,14 +1,14 @@
 package io.github.gomes.decisions.provider.local;
 
-import io.github.gomes.decisions.model.Answer;
-import io.github.gomes.decisions.model.DecisionRequest;
-import io.github.gomes.decisions.model.DecisionResult;
-import io.github.gomes.decisions.model.Option;
-import io.github.gomes.decisions.model.Question;
-import io.github.gomes.decisions.model.QuestionType;
+import io.github.gomes.decisions.domain.Answer;
+import io.github.gomes.decisions.domain.DecisionRequest;
+import io.github.gomes.decisions.domain.DecisionResult;
+import io.github.gomes.decisions.domain.Option;
+import io.github.gomes.decisions.domain.Question;
+import io.github.gomes.decisions.domain.QuestionType;
 import io.github.gomes.decisions.provider.Answers;
-import io.github.gomes.decisions.spi.Capabilities;
-import io.github.gomes.decisions.spi.DecisionProvider;
+import io.github.gomes.decisions.provider.Capabilities;
+import io.github.gomes.decisions.provider.DecisionProvider;
 
 import java.text.Normalizer;
 import java.util.ArrayList;
@@ -33,13 +33,12 @@ public class LocalHeuristicProvider implements DecisionProvider {
             "das", "e", "ou", "um", "uma", "em", "no", "na", "para", "com", "por", "que", "se", "meu", "minha"));
 
     @Override public String id() { return "local"; }
-    @Override public String displayName() { return "Local heuristic (offline baseline)"; }
     @Override public String defaultModel() { return "keyword-overlap-v1"; }
     @Override public Capabilities capabilities() { return new Capabilities(10_000, true, true); }
 
     @Override
     public DecisionResult decide(DecisionRequest request) {
-        validate(request);
+        checkSupported(request);
         long start = System.nanoTime();
         Set<String> input = tokens(request.textWithData());
         List<Answer> answers = new ArrayList<>();
@@ -58,7 +57,7 @@ public class LocalHeuristicProvider implements DecisionProvider {
             Map<String, Double> p = softmax(Map.of("true", yes, "false", no));
             double pTrue = p.get("true");
             return new Answer(q.name(), q.type(), String.valueOf(pTrue >= 0.5), pTrue, null, null,
-                    Math.round(Math.abs(2 * pTrue - 1) * 10_000) / 10_000.0);
+                    Answers.round(Math.abs(2 * pTrue - 1)));
         }
         Map<String, Double> raw = new LinkedHashMap<>();
         for (Option o : q.options()) {
@@ -90,7 +89,7 @@ public class LocalHeuristicProvider implements DecisionProvider {
         }
         Map<String, Double> out = new LinkedHashMap<>();
         for (Map.Entry<String, Double> e : exp.entrySet()) {
-            out.put(e.getKey(), Math.round(e.getValue() / sum * 10_000) / 10_000.0);
+            out.put(e.getKey(), Answers.round(e.getValue() / sum));
         }
         return out;
     }

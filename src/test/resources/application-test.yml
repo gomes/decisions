@@ -1,0 +1,11 @@
+# Tests must never reach real providers, even if API keys are set in the developer's environment.
+decisions:
+  api-token: ""
+  providers:
+    typesafe: { api-key: "" }
+    openai: { api-key: "" }
+    azure-openai: { api-key: "", endpoint: "" }
+    gemini: { api-key: "" }
+    microsoft: { api-key: "", endpoint: "" }
+    systemone: { api-key: "", endpoint: "", model: "" }
+    local: { enabled: true }

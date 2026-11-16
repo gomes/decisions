@@ -1,14 +1,14 @@
 package io.github.gomes.decisions.provider.gemini;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.node.ArrayNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import io.github.gomes.decisions.http.JsonHttp;
-import io.github.gomes.decisions.model.Answer;
-import io.github.gomes.decisions.model.DecisionRequest;
+import io.github.gomes.decisions.domain.Answer;
+import io.github.gomes.decisions.domain.DecisionRequest;
+import io.github.gomes.decisions.provider.Capabilities;
 import io.github.gomes.decisions.provider.HttpDecisionProvider;
 import io.github.gomes.decisions.provider.systemone.SystemOneCodec;
-import io.github.gomes.decisions.spi.Capabilities;
+import org.springframework.web.client.RestClient;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.node.ArrayNode;
+import tools.jackson.databind.node.ObjectNode;
 
 import java.net.URI;
 import java.util.List;
@@ -27,16 +27,17 @@ public class GeminiDecisionsProvider extends HttpDecisionProvider {
     public static final String DEFAULT_MODEL = "gemini-decision-1";
     public static final Capabilities CAPABILITIES = new Capabilities(1000, true, false);
 
-    public GeminiDecisionsProvider(String apiKey, String baseUrl, String model, JsonHttp http) {
-        super("gemini", "Google Gemini Decisions",
-                URI.create(trimSlash(baseUrl == null ? DEFAULT_BASE_URL : baseUrl) + "/v1beta/decisions"),
+    public GeminiDecisionsProvider(String apiKey, String baseUrl, String model, RestClient restClient) {
+        super("gemini",
+                URI.create(trimSlash(baseUrl == null || baseUrl.isBlank() ? DEFAULT_BASE_URL : baseUrl)
+                        + "/v1beta/decisions"),
                 Map.of("x-goog-api-key", apiKey),
-                model == null ? DEFAULT_MODEL : model, CAPABILITIES, http);
+                model == null || model.isBlank() ? DEFAULT_MODEL : model, CAPABILITIES, restClient);
     }
 
     @Override
     public ObjectNode buildBody(DecisionRequest request, String model) {
-        ObjectNode body = JsonHttp.MAPPER.createObjectNode();
+        ObjectNode body = JSON.createObjectNode();
         body.put("model", model);
         String text = request.textWithData();
         if (!request.hasImages()) {
