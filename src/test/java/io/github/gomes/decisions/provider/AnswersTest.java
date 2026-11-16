@@ -42,4 +42,12 @@ class AnswersTest {
         assertThat(a.probabilities()).containsEntry("high", 0.9);
         assertThat(a.confidence()).isEqualTo(0.8);
     }
+
+    @Test
+    void refusalIsAnAnswerWithoutValue() {
+        var a = Answers.parse("x", SCORE, JsonMapper.shared().readTree("{\"type\": \"refusal\", \"name\": \"s\"}"));
+        assertThat(a.isRefused()).isTrue();
+        assertThat(a.value()).isNull();
+        assertThat(a.refused()).isTrue();
+    }
 }

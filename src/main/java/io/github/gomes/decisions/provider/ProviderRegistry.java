@@ -9,7 +9,7 @@ import java.util.NoSuchElementException;
 import java.util.Optional;
 
 /** The configured providers, plus the status of every known provider (for discovery in the UI/API). */
-public final class ProviderRegistry {
+public final class ProviderRegistry implements AutoCloseable {
 
     private final Map<String, DecisionProvider> providers = new LinkedHashMap<>();
     private final Map<ProviderKind, ProviderStatus> statuses = new EnumMap<>(ProviderKind.class);
@@ -41,6 +41,20 @@ public final class ProviderRegistry {
 
     public List<String> enabledIds() {
         return List.copyOf(providers.keySet());
+    }
+
+    /** Releases the HTTP clients of providers that hold one (the SDK-based ones). */
+    @Override
+    public void close() {
+        for (DecisionProvider p : providers.values()) {
+            if (p instanceof AutoCloseable closeable) {
+                try {
+                    closeable.close();
+                } catch (Exception ignored) {
+                    // best effort on shutdown
+                }
+            }
+        }
     }
 
     /** Every known provider, enabled or not, in a stable order. */

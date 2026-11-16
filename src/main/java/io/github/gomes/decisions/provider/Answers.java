@@ -26,6 +26,9 @@ public final class Answers {
         if (node == null || node.isMissingNode() || node.isNull()) {
             throw new DecisionException(provider, "missing answer for question '" + q.name() + "'");
         }
+        if ("refusal".equals(node.path("type").asString(null))) {
+            return Answer.refusal(q.name(), q.type());
+        }
         return switch (q.type()) {
             case YES_NO -> yesNo(provider, q, node);
             case CHOICE -> categorical(provider, q, node, false);
@@ -106,7 +109,7 @@ public final class Answers {
      * When every key is a level/option index ({@code "0"}, {@code "1"}, ...) instead of an option value, as
      * Gemini does for score questions, re-key the map by option value.
      */
-    static Map<String, Double> byOptionValue(List<Option> options, Map<String, Double> probs) {
+    public static Map<String, Double> byOptionValue(List<Option> options, Map<String, Double> probs) {
         if (probs.isEmpty() || options.stream().anyMatch(o -> probs.containsKey(o.value()))) {
             return probs;
         }

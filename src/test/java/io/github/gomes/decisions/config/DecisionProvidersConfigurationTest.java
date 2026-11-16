@@ -3,6 +3,7 @@ package io.github.gomes.decisions.config;
 import io.github.gomes.decisions.provider.HttpDecisionProvider;
 import io.github.gomes.decisions.provider.ProviderRegistry;
 import io.github.gomes.decisions.provider.ProviderStatus;
+import io.github.gomes.decisions.provider.openai.OpenAiDecisionsProvider;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
@@ -56,11 +57,19 @@ class DecisionProvidersConfigurationTest {
             assertThat(registry.enabledIds()).containsExactly(
                     "typesafe", "openai", "azure-openai", "gemini", "microsoft", "systemone", "local");
             assertThat(registry.get("gemini").defaultModel()).isEqualTo("gemini-decision-1-preview");
-            assertThat(((HttpDecisionProvider) registry.get("azure-openai")).endpoint())
-                    .hasToString("https://res.openai.azure.com/openai/v1/decisions");
+            assertThat(((OpenAiDecisionsProvider) registry.get("azure-openai")).baseUrl())
+                    .isEqualTo("https://res.openai.azure.com/openai/v1");
+            assertThat(((OpenAiDecisionsProvider) registry.get("openai")).baseUrl())
+                    .isEqualTo("https://api.openai.com/v1");
             assertThat(((HttpDecisionProvider) registry.get("microsoft")).endpoint())
                     .hasToString("https://res.services.ai.azure.com/providers/microsoft/v1/systemone");
         });
+    }
+
+    @Test
+    void sdkClientsAreClosedWithTheContext() {
+        runner.withPropertyValues("decisions.providers.openai.api-key=b").run(ctx ->
+                assertThat(ctx.getBean(ProviderRegistry.class)).isInstanceOf(AutoCloseable.class));
     }
 
     @Test

@@ -47,9 +47,12 @@
           </th>
           <td th:each="o : ${outcomes}">
             <th:block th:if="${o.ok()}" th:with="a=${o.result.answer(q.name)}">
-              <strong th:text="${a.value}">valor</strong>
-              <span class="conf" th:classappend="${@view.confidenceClass(a.confidence)}"
-                    th:text="|conf. ${@view.num(a.confidence)}|">conf</span>
+              <em th:if="${a.isRefused()}" class="refused">recusou responder</em>
+              <th:block th:unless="${a.isRefused()}">
+                <strong th:text="${a.value}">valor</strong>
+                <span class="conf" th:classappend="${@view.confidenceClass(a.confidence)}"
+                      th:text="|conf. ${@view.num(a.confidence)}|">conf</span>
+              </th:block>
             </th:block>
             <span th:unless="${o.ok()}" class="error-text">erro</span>
           </td>
@@ -81,9 +84,12 @@
             <div class="answer-head">
               <code th:text="${q.name}">name</code>
               <span class="muted small" th:text="${@view.typeLabel(q.type)}">tipo</span>
-              <span class="value" th:text="${a.value}">valor</span>
-              <span class="conf" th:classappend="${@view.confidenceClass(a.confidence)}"
-                    th:text="|confiança ${@view.num(a.confidence)}|">conf</span>
+              <em th:if="${a.isRefused()}" class="value refused">recusou responder</em>
+              <th:block th:unless="${a.isRefused()}">
+                <span class="value" th:text="${a.value}">valor</span>
+                <span class="conf" th:classappend="${@view.confidenceClass(a.confidence)}"
+                      th:text="|confiança ${@view.num(a.confidence)}|">conf</span>
+              </th:block>
             </div>
 
             <!-- Sim/Não: probabilidade de verdadeiro -->
