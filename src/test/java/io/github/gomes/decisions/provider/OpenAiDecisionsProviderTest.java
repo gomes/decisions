@@ -1,15 +1,20 @@
 package io.github.gomes.decisions.provider;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import io.github.gomes.decisions.StubHttp;
 import io.github.gomes.decisions.TestFixtures;
-import io.github.gomes.decisions.http.JsonHttp;
-import io.github.gomes.decisions.model.DecisionRequest;
-import io.github.gomes.decisions.model.DecisionResult;
+import io.github.gomes.decisions.domain.DecisionRequest;
+import io.github.gomes.decisions.domain.DecisionResult;
 import io.github.gomes.decisions.provider.openai.OpenAiDecisionsProvider;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.MediaType;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.json.JsonMapper;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.within;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.header;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.headerDoesNotExist;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
 class OpenAiDecisionsProviderTest {
 
@@ -28,76 +33,82 @@ class OpenAiDecisionsProviderTest {
              "usage": {"input_tokens": 77}}
             """;
 
+    final MockProvider mock = new MockProvider();
+
     @Test
-    void openAiRequestAndResponse() throws Exception {
-        try (StubHttp stub = new StubHttp().reply(200, REPLY)) {
-            var p = OpenAiDecisionsProvider.openAi("sk-test", stub.baseUrl(), null, new JsonHttp());
-            DecisionRequest req = TestFixtures.ticketWithImage();
-            DecisionResult r = p.decide(req);
+    void openAiRequestAndResponse() {
+        mock.server.expect(requestTo("https://api.openai.com/v1/decisions"))
+                .andExpect(header("Authorization", "Bearer sk-test"))
+                .andExpect(mock.captureBody())
+                .andRespond(withSuccess(REPLY, MediaType.APPLICATION_JSON));
 
-            assertEquals("/v1/decisions", stub.lastPath);
-            assertEquals("Bearer sk-test", stub.lastHeaders.get("authorization"));
-            JsonNode b = stub.lastBody;
-            assertEquals("gpt-6-luna", b.get("model").asText());
-            assertEquals("input_text", b.at("/input/0/type").asText());
-            assertEquals("input_image", b.at("/input/1/type").asText());
-            assertEquals("https://example.com/mug.jpg", b.at("/input/1/image_url").asText());
-            assertEquals("predicate", b.at("/questions/0/type").asText());
-            assertTrue(b.at("/questions/0/instructions").asText().contains("True when: broken or cracked"));
-            assertEquals("billing", b.at("/questions/1/choices/0/value").asText());
-            assertEquals("Payments and refunds", b.at("/questions/1/choices/0/description").asText());
-            assertEquals("high", b.at("/questions/2/levels/2/value").asText());
+        DecisionResult r = OpenAiDecisionsProvider.openAi("sk-test", null, null, mock.restClient)
+                .decide(TestFixtures.ticketWithImage());
 
-            assertEquals(0.97, r.answer("is_damaged").probability());
-            assertEquals("shipping", r.answer("queue").value());
-            assertEquals(0.95, r.answer("queue").probabilities().get("shipping"));
-            assertEquals("medium", r.answer("severity").value());
-            assertEquals(1.1, r.answer("severity").score(), 1e-9);
-        }
+        JsonNode b = mock.body();
+        assertThat(b.get("model").asString()).isEqualTo("gpt-6-luna");
+        assertThat(b.at("/input/0/type").asString()).isEqualTo("input_text");
+        assertThat(b.at("/input/1/type").asString()).isEqualTo("input_image");
+        assertThat(b.at("/input/1/image_url").asString()).isEqualTo("https://example.com/mug.jpg");
+        assertThat(b.at("/questions/0/type").asString()).isEqualTo("predicate");
+        assertThat(b.at("/questions/0/instructions").asString()).contains("True when: broken or cracked");
+        assertThat(b.at("/questions/1/choices/0/value").asString()).isEqualTo("billing");
+        assertThat(b.at("/questions/1/choices/0/description").asString()).isEqualTo("Payments and refunds");
+        assertThat(b.at("/questions/2/levels/2/value").asString()).isEqualTo("high");
+
+        assertThat(r.answer("is_damaged").probability()).isEqualTo(0.97);
+        assertThat(r.answer("queue").value()).isEqualTo("shipping");
+        assertThat(r.answer("queue").probabilities()).containsEntry("shipping", 0.95);
+        assertThat(r.answer("severity").value()).isEqualTo("medium");
+        assertThat(r.answer("severity").score()).isCloseTo(1.1, within(1e-9));
     }
 
     @Test
-    void sendsStructuredDataAsInputJson() throws Exception {
-        try (StubHttp stub = new StubHttp().reply(200, REPLY)) {
-            var p = OpenAiDecisionsProvider.openAi("k", stub.baseUrl(), null, new JsonHttp());
-            DecisionRequest t = TestFixtures.ticket();
-            var data = JsonHttp.MAPPER.readTree("{\"order\": 4411, \"vip\": true}");
-            p.decide(new DecisionRequest(null, data, null, t.questions(), "gpt-6-luna-mini"));
-            assertEquals("gpt-6-luna-mini", stub.lastBody.get("model").asText());
-            assertEquals(1, stub.lastBody.get("input").size());
-            assertEquals("input_json", stub.lastBody.at("/input/0/type").asText());
-            assertEquals(4411, stub.lastBody.at("/input/0/json/order").asInt());
-        }
+    void sendsStructuredDataAsInputJsonAndHonoursModelOverride() {
+        mock.server.expect(mock.captureBody()).andRespond(withSuccess(REPLY, MediaType.APPLICATION_JSON));
+        DecisionRequest t = TestFixtures.ticket();
+        JsonNode data = JsonMapper.shared().readTree("{\"order\": 4411, \"vip\": true}");
+
+        OpenAiDecisionsProvider.openAi("k", null, null, mock.restClient)
+                .decide(new DecisionRequest(null, data, null, t.questions(), "gpt-6-luna-mini"));
+
+        JsonNode b = mock.body();
+        assertThat(b.get("model").asString()).isEqualTo("gpt-6-luna-mini");
+        assertThat(b.get("input").size()).isEqualTo(1);
+        assertThat(b.at("/input/0/type").asString()).isEqualTo("input_json");
+        assertThat(b.at("/input/0/json/order").asInt()).isEqualTo(4411);
     }
 
     @Test
-    void unnamedAnswersAreMatchedByPosition() throws Exception {
-        String reply = """
+    void unnamedAnswersAreMatchedByPosition() {
+        mock.server.expect(requestTo("https://api.openai.com/v1/decisions")).andRespond(withSuccess("""
                 {"answers": [{"probability": 0.1},
                              {"value": "billing", "probabilities": {"billing": 0.9, "shipping": 0.1}},
                              {"probabilities": [0.6, 0.3, 0.1]}]}
-                """;
-        try (StubHttp stub = new StubHttp().reply(200, reply)) {
-            var p = OpenAiDecisionsProvider.openAi("k", stub.baseUrl(), null, new JsonHttp());
-            DecisionResult r = p.decide(TestFixtures.ticket());
-            assertEquals("false", r.answer("is_damaged").value());
-            assertEquals("billing", r.answer("queue").value());
-            assertEquals(0.8, r.answer("queue").confidence(), 1e-9, "confidence derived from margin");
-            assertEquals("low", r.answer("severity").value());
-            assertEquals(0.5, r.answer("severity").score(), 1e-9);
-        }
+                """, MediaType.APPLICATION_JSON));
+
+        DecisionResult r = OpenAiDecisionsProvider.openAi("k", null, null, mock.restClient)
+                .decide(TestFixtures.ticket());
+
+        assertThat(r.answer("is_damaged").value()).isEqualTo("false");
+        assertThat(r.answer("queue").value()).isEqualTo("billing");
+        assertThat(r.answer("queue").confidence()).as("derived from margin").isCloseTo(0.8, within(1e-9));
+        assertThat(r.answer("severity").value()).isEqualTo("low");
+        assertThat(r.answer("severity").score()).isCloseTo(0.5, within(1e-9));
     }
 
     @Test
-    void azureUsesDeploymentAndApiKey() throws Exception {
-        try (StubHttp stub = new StubHttp().reply(200, REPLY)) {
-            var p = OpenAiDecisionsProvider.azure(stub.baseUrl(), "az", "luna-prod", new JsonHttp());
-            DecisionResult r = p.decide(TestFixtures.ticket());
-            assertEquals("/openai/v1/decisions", stub.lastPath);
-            assertEquals("az", stub.lastHeaders.get("api-key"));
-            assertNull(stub.lastHeaders.get("authorization"));
-            assertEquals("luna-prod", stub.lastBody.get("model").asText());
-            assertEquals("azure-openai", r.provider());
-        }
+    void azureUsesDeploymentAndApiKey() {
+        mock.server.expect(requestTo("https://res.openai.azure.com/openai/v1/decisions"))
+                .andExpect(header("api-key", "az"))
+                .andExpect(headerDoesNotExist("Authorization"))
+                .andExpect(mock.captureBody())
+                .andRespond(withSuccess(REPLY, MediaType.APPLICATION_JSON));
+
+        DecisionResult r = OpenAiDecisionsProvider.azure("https://res.openai.azure.com", "az", "luna-prod",
+                mock.restClient).decide(TestFixtures.ticket());
+
+        assertThat(mock.body().get("model").asString()).isEqualTo("luna-prod");
+        assertThat(r.provider()).isEqualTo("azure-openai");
     }
 }

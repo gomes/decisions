@@ -1,0 +1,58 @@
+spring:
+  application:
+    name: decisions
+  threads:
+    virtual:
+      enabled: true
+  http:
+    clients:
+      connect-timeout: ${DECISIONS_CONNECT_TIMEOUT:10s}
+      read-timeout: ${DECISIONS_TIMEOUT:30s}
+  mvc:
+    problemdetails:
+      enabled: true
+  web:
+    # Used when the client sends no Accept-Language (validation messages exist in English and Portuguese).
+    locale: pt_BR
+
+server:
+  port: ${PORT:8080}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+# Each provider is enabled when its credentials are present (and enabled is not false).
+decisions:
+  api-token: ${DECISIONS_GATEWAY_TOKEN:}
+  playground:
+    enabled: ${DECISIONS_PLAYGROUND_ENABLED:true}
+  providers:
+    typesafe:
+      api-key: ${TYPESAFE_API_KEY:}
+      base-url: ${TYPESAFE_BASE_URL:https://api.typesafe.ai}
+      model: ${TYPESAFE_MODEL:jev-latest}
+    openai:
+      api-key: ${OPENAI_API_KEY:}
+      base-url: ${OPENAI_BASE_URL:https://api.openai.com}
+      model: ${OPENAI_DECISIONS_MODEL:gpt-6-luna}
+    azure-openai:
+      api-key: ${AZURE_OPENAI_API_KEY:}
+      endpoint: ${AZURE_OPENAI_ENDPOINT:}
+      model: ${AZURE_OPENAI_DECISIONS_DEPLOYMENT:gpt-6-luna}
+    gemini:
+      api-key: ${GEMINI_API_KEY:}
+      base-url: ${GEMINI_BASE_URL:https://generativelanguage.googleapis.com}
+      model: ${GEMINI_DECISIONS_MODEL:gemini-decision-1}
+    microsoft:
+      api-key: ${FOUNDRY_API_KEY:}
+      endpoint: ${FOUNDRY_ENDPOINT:}
+      model: ${FOUNDRY_DECISION_DEPLOYMENT:microsoft-decision-1}
+    systemone:
+      api-key: ${SYSTEMONE_API_KEY:}
+      endpoint: ${SYSTEMONE_ENDPOINT:}
+      model: ${SYSTEMONE_MODEL:}
+    local:
+      enabled: ${DECISIONS_LOCAL_ENABLED:true}

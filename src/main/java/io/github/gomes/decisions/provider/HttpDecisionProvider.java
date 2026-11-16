@@ -1,13 +1,16 @@
 package io.github.gomes.decisions.provider;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import io.github.gomes.decisions.http.JsonHttp;
-import io.github.gomes.decisions.model.Answer;
-import io.github.gomes.decisions.model.DecisionRequest;
-import io.github.gomes.decisions.model.DecisionResult;
-import io.github.gomes.decisions.spi.Capabilities;
-import io.github.gomes.decisions.spi.DecisionProvider;
+import io.github.gomes.decisions.domain.Answer;
+import io.github.gomes.decisions.domain.DecisionRequest;
+import io.github.gomes.decisions.domain.DecisionResult;
+import org.springframework.http.MediaType;
+import org.springframework.web.client.ResourceAccessException;
+import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientException;
+import org.springframework.web.client.RestClientResponseException;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.json.JsonMapper;
+import tools.jackson.databind.node.ObjectNode;
 
 import java.net.URI;
 import java.util.List;
@@ -17,27 +20,27 @@ import java.util.Objects;
 /** Template for providers that are a single JSON POST: build body, call, parse answers. */
 public abstract class HttpDecisionProvider implements DecisionProvider {
 
+    /** Shared mapper for building request trees; immutable and thread-safe in Jackson 3. */
+    protected static final JsonMapper JSON = JsonMapper.shared();
+
     protected final String id;
-    protected final String displayName;
     protected final URI endpoint;
     protected final Map<String, String> headers;
     protected final String defaultModel;
     protected final Capabilities capabilities;
-    protected final JsonHttp http;
+    protected final RestClient restClient;
 
-    protected HttpDecisionProvider(String id, String displayName, URI endpoint, Map<String, String> headers,
-                                   String defaultModel, Capabilities capabilities, JsonHttp http) {
+    protected HttpDecisionProvider(String id, URI endpoint, Map<String, String> headers, String defaultModel,
+                                   Capabilities capabilities, RestClient restClient) {
         this.id = Objects.requireNonNull(id);
-        this.displayName = Objects.requireNonNull(displayName);
         this.endpoint = Objects.requireNonNull(endpoint);
         this.headers = Map.copyOf(headers);
         this.defaultModel = Objects.requireNonNull(defaultModel);
         this.capabilities = Objects.requireNonNull(capabilities);
-        this.http = http == null ? new JsonHttp() : http;
+        this.restClient = Objects.requireNonNull(restClient);
     }
 
     @Override public String id() { return id; }
-    @Override public String displayName() { return displayName; }
     @Override public String defaultModel() { return defaultModel; }
     @Override public Capabilities capabilities() { return capabilities; }
 
@@ -45,13 +48,41 @@ public abstract class HttpDecisionProvider implements DecisionProvider {
 
     @Override
     public DecisionResult decide(DecisionRequest request) {
-        validate(request);
+        checkSupported(request);
         String model = request.model() != null ? request.model() : defaultModel;
         ObjectNode body = buildBody(request, model);
-        JsonHttp.Response resp = http.post(id, endpoint, headers, body);
-        List<Answer> answers = parseAnswers(request, resp.body());
-        JsonNode usage = resp.body().get("usage");
-        return new DecisionResult(id, model, answers, resp.latencyMs(), usage, resp.body());
+
+        long start = System.nanoTime();
+        JsonNode response = post(body);
+        long latencyMs = (System.nanoTime() - start) / 1_000_000;
+
+        List<Answer> answers = parseAnswers(request, response);
+        return new DecisionResult(id, model, answers, latencyMs, response.get("usage"), response);
+    }
+
+    private JsonNode post(ObjectNode body) {
+        try {
+            JsonNode response = restClient.post()
+                    .uri(endpoint)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .accept(MediaType.APPLICATION_JSON)
+                    .headers(h -> headers.forEach(h::set))
+                    .body(body)
+                    .retrieve()
+                    .body(JsonNode.class);
+            if (response == null) {
+                throw new DecisionException(id, "empty response body");
+            }
+            return response;
+        } catch (RestClientResponseException e) {
+            String responseBody = e.getResponseBodyAsString();
+            throw new DecisionException(id, "HTTP " + e.getStatusCode().value() + ": " + errorMessage(responseBody),
+                    e.getStatusCode().value(), responseBody, e);
+        } catch (ResourceAccessException e) {
+            throw new DecisionException(id, "could not reach " + endpoint + ": " + e.getMostSpecificCause().getMessage(), e);
+        } catch (RestClientException e) {
+            throw new DecisionException(id, "invalid response from " + endpoint + ": " + e.getMessage(), e);
+        }
     }
 
     /** Builds the provider-specific request body. */
@@ -59,6 +90,23 @@ public abstract class HttpDecisionProvider implements DecisionProvider {
 
     /** Maps the provider response to normalized answers, in request order. */
     public abstract List<Answer> parseAnswers(DecisionRequest request, JsonNode response);
+
+    /** Pulls {@code error.message} (OpenAI/Google style) or {@code message}/{@code detail} out of an error body. */
+    static String errorMessage(String body) {
+        if (body == null || body.isBlank()) {
+            return "(empty body)";
+        }
+        try {
+            JsonNode n = JSON.readTree(body);
+            if (n.path("error").isString()) return n.get("error").asString();
+            if (n.path("error").path("message").isString()) return n.path("error").path("message").asString();
+            if (n.path("message").isString()) return n.get("message").asString();
+            if (n.path("detail").isString()) return n.get("detail").asString();
+        } catch (RuntimeException ignored) {
+            // not JSON: fall through
+        }
+        return body.length() > 500 ? body.substring(0, 500) + "…" : body;
+    }
 
     protected static String trimSlash(String s) {
         return s.endsWith("/") ? s.substring(0, s.length() - 1) : s;

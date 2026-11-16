@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="pt-BR" xmlns:th="http://www.thymeleaf.org">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Decisions Playground</title>
+  <link rel="stylesheet" th:href="@{/css/playground.css}">
+</head>
+<body>
+
+<header class="hero">
+  <div class="wrap">
+    <h1>Decisions Playground</h1>
+    <p class="lead">
+      Modelos de decisão respondem <strong>perguntas fechadas</strong> (sim/não, escolha, escala) sobre uma
+      entrada e devolvem <strong>probabilidades calibradas</strong> em vez de texto livre. São rápidos e baratos
+      para triagem, moderação, roteamento de agentes e checagem de políticas.
+    </p>
+    <p class="lead small">
+      Monte a requisição abaixo, marque um ou mais provedores e compare as respostas. A mesma requisição pode
+      ser enviada pela API REST: <a th:href="@{/api/v1/providers}"><code>GET /api/v1/providers</code></a>,
+      <code>POST /api/v1/decisions</code> e <code>POST /api/v1/compare</code>.
+    </p>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <!-- ============================== RESULTADOS ============================== -->
+  <section id="results" class="card results" th:if="${outcomes != null}">
+    <h2>Resultado</h2>
+
+    <!-- Comparação lado a lado (2+ provedores) -->
+    <div class="table-scroll" th:if="${outcomes.size() > 1}">
+      <table class="compare">
+        <thead>
+        <tr>
+          <th>Pergunta</th>
+          <th th:each="o : ${outcomes}" th:text="${@view.providerName(providers, o.provider)}">Provedor</th>
+        </tr>
+        </thead>
+        <tbody>
+        <tr th:each="q : ${request.questions}">
+          <th>
+            <code th:text="${q.name}">name</code>
+            <span class="muted small" th:text="${@view.typeLabel(q.type)}">tipo</span>
+          </th>
+          <td th:each="o : ${outcomes}">
+            <th:block th:if="${o.ok()}" th:with="a=${o.result.answer(q.name)}">
+              <strong th:text="${a.value}">valor</strong>
+              <span class="conf" th:classappend="${@view.confidenceClass(a.confidence)}"
+                    th:text="|conf. ${@view.num(a.confidence)}|">conf</span>
+            </th:block>
+            <span th:unless="${o.ok()}" class="error-text">erro</span>
+          </td>
+        </tr>
+        <tr class="latency">
+          <th>Latência</th>
+          <td th:each="o : ${outcomes}" th:text="${o.ok()} ? |${o.result.latencyMs} ms| : '—'">ms</td>
+        </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Detalhe por provedor -->
+    <div class="outcomes">
+      <article class="outcome" th:each="o : ${outcomes}" th:classappend="${o.ok()} ? 'ok' : 'failed'">
+        <header>
+          <h3 th:text="${@view.providerName(providers, o.provider)}">Provedor</h3>
+          <span th:if="${o.ok()}" class="muted small"
+                th:text="|modelo ${o.result.model} · ${o.result.latencyMs} ms|">modelo</span>
+        </header>
+
+        <div th:unless="${o.ok()}" class="alert">
+          <strong th:text="${o.upstreamStatus != null} ? |A API respondeu HTTP ${o.upstreamStatus}| : 'Falha'">Falha</strong>
+          <p th:text="${o.error}">mensagem</p>
+        </div>
+
+        <ul class="answers" th:if="${o.ok()}">
+          <li th:each="q : ${request.questions}" th:with="a=${o.result.answer(q.name)}">
+            <div class="answer-head">
+              <code th:text="${q.name}">name</code>
+              <span class="muted small" th:text="${@view.typeLabel(q.type)}">tipo</span>
+              <span class="value" th:text="${a.value}">valor</span>
+              <span class="conf" th:classappend="${@view.confidenceClass(a.confidence)}"
+                    th:text="|confiança ${@view.num(a.confidence)}|">conf</span>
+            </div>
+
+            <!-- Sim/Não: probabilidade de verdadeiro -->
+            <div th:if="${a.probability != null}" class="bar-row">
+              <span class="bar-label">P(sim)</span>
+              <span class="bar"><span th:style="|width: ${@view.pct(a.probability)}%|"></span></span>
+              <span class="bar-num" th:text="${@view.num(a.probability)}">0.00</span>
+            </div>
+
+            <!-- Escolha / Escala: probabilidade por opção, na ordem definida -->
+            <th:block th:if="${a.probabilities != null}">
+              <div class="bar-row" th:each="opt : ${q.options}"
+                   th:with="p=${a.probabilities.get(opt.value)}"
+                   th:classappend="${opt.value == a.value} ? 'chosen'">
+                <span class="bar-label" th:text="${opt.value}">opção</span>
+                <span class="bar"><span th:style="|width: ${@view.pct(p)}%|"></span></span>
+                <span class="bar-num" th:text="${@view.num(p)}">0.00</span>
+              </div>
+            </th:block>
+            <p th:if="${a.score != null}" class="muted small"
+               th:text="|Índice esperado ${@view.num(a.score)} (0 = ${q.options[0].value}, ${q.options.size() - 1} = ${q.options[q.options.size() - 1].value})|">
+              score
+            </p>
+          </li>
+        </ul>
+      </article>
+    </div>
+
+    <details class="api-equivalent">
+      <summary>Ver a requisição equivalente na API REST</summary>
+      <p class="small muted">Corpo enviado (formato neutro da app, traduzido para o formato de cada provedor):</p>
+      <pre><code th:text="${requestJson}">{}</code></pre>
+      <p class="small muted">Com <code>curl</code> (salve o corpo acima em <code>request.json</code>):</p>
+      <pre><code th:text="|curl -X POST '${apiBaseUrl}/api/v1/compare?providers=${#strings.listJoin(form.providers, ',')}' \
+  -H 'Content-Type: application/json' \
+  -d @request.json|">curl</code></pre>
+    </details>
+  </section>
+
+  <form method="post" th:action="@{/}" th:object="${form}" id="playground" novalidate>
+
+    <div class="alert" th:if="${#fields.hasGlobalErrors()}">
+      <p th:each="err : ${#fields.globalErrors()}" th:text="${err}">erro</p>
+    </div>
+
+    <!-- ============================== EXEMPLOS ============================== -->
+    <section class="card">
+      <h2><span class="step">1</span> Comece por um exemplo</h2>
+      <p class="help">Cada exemplo preenche o formulário inteiro. Depois é só ajustar e executar.</p>
+      <div class="examples">
+        <a th:each="ex : ${examples}" class="example" th:href="@{/(example=${ex.id})}"
+           th:classappend="${ex.id == selectedExample} ? 'active'">
+          <strong th:text="${ex.title}">Título</strong>
+          <span th:text="${ex.description}">Descrição</span>
+        </a>
+      </div>
+    </section>
+
+    <!-- ============================== PROVEDORES ============================== -->
+    <section class="card">
+      <h2><span class="step">2</span> Provedores</h2>
+      <p class="help">
+        Marque em quais provedores executar. Com mais de um marcado, a mesma requisição é enviada a todos
+        <strong>em paralelo</strong> e as respostas aparecem lado a lado. Um provedor fica habilitado quando as
+        variáveis de ambiente indicadas estão definidas (reinicie a aplicação depois de defini-las).
+      </p>
+      <div class="toolbar">
+        <button type="button" class="link" data-select="all">Marcar todos os habilitados</button>
+        <button type="button" class="link" data-select="none">Desmarcar todos</button>
+      </div>
+      <p class="field-error" th:if="${#fields.hasErrors('providers')}" th:errors="*{providers}">erro</p>
+
+      <div class="providers">
+        <div th:each="p : ${providers}" class="provider" th:classappend="${p.enabled} ? 'on' : 'off'">
+          <label class="provider-head">
+            <input type="checkbox" name="providers" th:value="${p.id}"
+                   th:checked="${#lists.contains(form.providers, p.id)}" th:disabled="${!p.enabled}">
+            <span class="provider-name" th:text="${p.name}">Nome</span>
+            <span class="badge" th:text="${p.enabled} ? 'habilitado' : 'desabilitado'">status</span>
+          </label>
+          <p class="small" th:text="${p.description}">descrição</p>
+          <p class="chips">
+            <span class="chip" th:text="${p.protocol}">protocolo</span>
+            <th:block th:if="${p.enabled}">
+              <span class="chip" th:text="|até ${p.capabilities.maxQuestions} perguntas|">perguntas</span>
+              <span class="chip" th:text="${p.capabilities.images} ? 'texto + imagens' : 'só texto'">imagens</span>
+            </th:block>
+          </p>
+          <th:block th:if="${p.enabled}">
+            <label class="small" th:for="|model-${p.id}|">Modelo (opcional)</label>
+            <input type="text" th:id="|model-${p.id}|" th:name="|models[${p.id}]|"
+                   th:value="${form.models.get(p.id)}" th:placeholder="${p.defaultModel}">
+          </th:block>
+          <p th:unless="${p.enabled}" class="small muted">
+            Para habilitar, defina
+            <th:block th:each="env, st : ${p.requiredEnv}"><code th:text="${env}">VAR</code><th:block th:unless="${st.last}">, </th:block></th:block>.
+          </p>
+          <a th:if="${p.docsUrl != null}" th:href="${p.docsUrl}" class="small" target="_blank" rel="noopener">documentação</a>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================== ENTRADA ============================== -->
+    <section class="card">
+      <h2><span class="step">3</span> Entrada</h2>
+      <p class="help">O conteúdo sobre o qual o modelo vai decidir. Informe ao menos um dos três campos.</p>
+
+      <div class="field">
+        <label for="input">Texto <span class="muted small">(<code>input</code> / <code>state</code>)</span></label>
+        <textarea id="input" th:field="*{input}" rows="4"
+                  placeholder="Ex.: Olá, meu pedido chegou com a caneca quebrada. Podem enviar outra?"></textarea>
+        <p class="help">Uma mensagem, e-mail, comentário, trecho de conversa ou de política. É o que todas as APIs recebem.</p>
+        <p class="field-error" th:if="${#fields.hasErrors('input')}" th:errors="*{input}">erro</p>
+      </div>
+
+      <div class="field">
+        <label for="data">Dados estruturados <span class="muted small">(JSON, opcional)</span></label>
+        <textarea id="data" th:field="*{data}" rows="4" class="mono"
+                  placeholder='Ex.: {"customerTier": "gold", "daysSinceDelivery": 41}'></textarea>
+        <p class="help">
+          Objeto ou lista JSON com contexto extra. A OpenAI recebe como <code>input_json</code>; Gemini e
+          System One recebem o JSON junto ao texto.
+        </p>
+        <p class="field-error" th:if="${#fields.hasErrors('data')}" th:errors="*{data}">erro</p>
+      </div>
+
+      <div class="field">
+        <label for="images">Imagens <span class="muted small">(opcional, uma URL por linha)</span></label>
+        <textarea id="images" th:field="*{images}" rows="2" class="mono"
+                  placeholder="https://exemplo.com/foto.jpg&#10;data:image/png;base64,iVBORw0..."></textarea>
+        <p class="help">
+          URLs <code>https://</code> ou <code>data:</code> URIs. Só OpenAI, Azure OpenAI e Gemini aceitam imagens;
+          os demais recusam a requisição antes de chamar a API.
+        </p>
+        <p class="field-error" th:if="${#fields.hasErrors('images')}" th:errors="*{images}">erro</p>
+      </div>
+    </section>
+
+    <!-- ============================== PERGUNTAS ============================== -->
+    <section class="card">
+      <h2><span class="step">4</span> Perguntas</h2>
+      <div class="help">
+        <p>Cada pergunta recebe uma resposta tipada. Os nomes variam entre as APIs, mas a app normaliza:</p>
+        <table class="types">
+          <tr><th>Sim/Não</th><td><code>noul</code> / <code>predicate</code></td>
+            <td>Devolve P(sim). Use “Verdadeiro quando” e “Falso quando” para deixar o critério explícito.</td></tr>
+          <tr><th>Escolha</th><td><code>choice</code></td>
+            <td>Escolhe uma entre 2 e 255 opções e devolve a probabilidade de cada uma.</td></tr>
+          <tr><th>Escala</th><td><code>score</code></td>
+            <td>Níveis ordenados do <strong>menor para o maior</strong>. Devolve o nível mais provável e o índice esperado.</td></tr>
+        </table>
+      </div>
+      <p class="field-error" th:if="${#fields.hasErrors('questions')}" th:errors="*{questions}">erro</p>
+
+      <div id="questions">
+        <fieldset class="question" th:each="q, st : *{questions}" th:attr="data-type=${q.type}">
+          <legend>Pergunta <span class="q-number" th:text="${st.count}">1</span></legend>
+          <button type="button" class="remove" title="Remover pergunta" aria-label="Remover pergunta">×</button>
+
+          <div class="row">
+            <div class="field">
+              <label th:for="|questions${st.index}.name|">Nome</label>
+              <input type="text" th:field="*{questions[__${st.index}__].name}" placeholder="ex.: is_damaged">
+              <p class="help">Identificador da resposta: letras, números, <code>_</code> ou <code>-</code>.</p>
+              <p class="field-error" th:if="${#fields.hasErrors('questions[__${st.index}__].name')}"
+                 th:errors="*{questions[__${st.index}__].name}">erro</p>
+            </div>
+            <div class="field">
+              <label th:for="|questions${st.index}.type|">Tipo</label>
+              <select th:field="*{questions[__${st.index}__].type}" class="q-type">
+                <option value="yes_no">Sim/Não</option>
+                <option value="choice">Escolha</option>
+                <option value="score">Escala</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="field">
+            <label th:for="|questions${st.index}.instructions|">Instruções</label>
+            <textarea th:field="*{questions[__${st.index}__].instructions}" rows="2"
+                      placeholder="O que o modelo deve decidir. Ex.: O cliente relata um item danificado?"></textarea>
+            <p class="field-error" th:if="${#fields.hasErrors('questions[__${st.index}__].instructions')}"
+               th:errors="*{questions[__${st.index}__].instructions}">erro</p>
+          </div>
+
+          <div class="row only-yesno">
+            <div class="field">
+              <label th:for="|questions${st.index}.trueWhen|">Verdadeiro quando <span class="muted small">(opcional)</span></label>
+              <input type="text" th:field="*{questions[__${st.index}__].trueWhen}" placeholder="ex.: item chegou quebrado">
+            </div>
+            <div class="field">
+              <label th:for="|questions${st.index}.falseWhen|">Falso quando <span class="muted small">(opcional)</span></label>
+              <input type="text" th:field="*{questions[__${st.index}__].falseWhen}" placeholder="ex.: item chegou bem">
+            </div>
+          </div>
+          <p class="field-error" th:if="${#fields.hasErrors('questions[__${st.index}__].trueWhen')}"
+             th:errors="*{questions[__${st.index}__].trueWhen}">erro</p>
+
+          <div class="field only-options">
+            <label th:for="|questions${st.index}.options|">
+              <span class="only-choice">Opções</span><span class="only-score">Níveis (do menor para o maior)</span>
+            </label>
+            <textarea th:field="*{questions[__${st.index}__].options}" rows="4" class="mono"
+                      placeholder="valor | descrição&#10;billing | pagamentos e reembolsos&#10;shipping | entrega e avarias"></textarea>
+            <p class="help">Uma por linha, no formato <code>valor | descrição</code>. A descrição é opcional, mas melhora a decisão.</p>
+            <p class="field-error" th:if="${#fields.hasErrors('questions[__${st.index}__].options')}"
+               th:errors="*{questions[__${st.index}__].options}">erro</p>
+          </div>
+        </fieldset>
+      </div>
+
+      <button type="button" id="add-question" class="secondary">+ Adicionar pergunta</button>
+    </section>
+
+    <div class="actions">
+      <button type="submit" class="primary" id="run">Executar decisão</button>
+      <span class="help">As chamadas usam as chaves configuradas no servidor; nada é enviado pelo navegador.</span>
+    </div>
+  </form>
+
+  <!-- Modelo usado pelo botão "Adicionar pergunta" -->
+  <template id="question-template">
+    <fieldset class="question" data-type="yes_no">
+      <legend>Pergunta <span class="q-number">N</span></legend>
+      <button type="button" class="remove" title="Remover pergunta" aria-label="Remover pergunta">×</button>
+      <div class="row">
+        <div class="field">
+          <label for="questions__i__.name">Nome</label>
+          <input type="text" id="questions__i__.name" name="questions[__i__].name" placeholder="ex.: is_damaged">
+          <p class="help">Identificador da resposta: letras, números, <code>_</code> ou <code>-</code>.</p>
+        </div>
+        <div class="field">
+          <label for="questions__i__.type">Tipo</label>
+          <select id="questions__i__.type" name="questions[__i__].type" class="q-type">
+            <option value="yes_no">Sim/Não</option>
+            <option value="choice">Escolha</option>
+            <option value="score">Escala</option>
+          </select>
+        </div>
+      </div>
+      <div class="field">
+        <label for="questions__i__.instructions">Instruções</label>
+        <textarea id="questions__i__.instructions" name="questions[__i__].instructions" rows="2"
+                  placeholder="O que o modelo deve decidir. Ex.: O cliente relata um item danificado?"></textarea>
+      </div>
+      <div class="row only-yesno">
+        <div class="field">
+          <label for="questions__i__.trueWhen">Verdadeiro quando <span class="muted small">(opcional)</span></label>
+          <input type="text" id="questions__i__.trueWhen" name="questions[__i__].trueWhen" placeholder="ex.: item chegou quebrado">
+        </div>
+        <div class="field">
+          <label for="questions__i__.falseWhen">Falso quando <span class="muted small">(opcional)</span></label>
+          <input type="text" id="questions__i__.falseWhen" name="questions[__i__].falseWhen" placeholder="ex.: item chegou bem">
+        </div>
+      </div>
+      <div class="field only-options">
+        <label for="questions__i__.options">
+          <span class="only-choice">Opções</span><span class="only-score">Níveis (do menor para o maior)</span>
+        </label>
+        <textarea id="questions__i__.options" name="questions[__i__].options" rows="4" class="mono"
+                  placeholder="valor | descrição&#10;billing | pagamentos e reembolsos&#10;shipping | entrega e avarias"></textarea>
+        <p class="help">Uma por linha, no formato <code>valor | descrição</code>. A descrição é opcional, mas melhora a decisão.</p>
+      </div>
+    </fieldset>
+  </template>
+</main>
+
+<footer class="wrap muted small">
+  <a th:href="@{/api/v1/providers}">/api/v1/providers</a> ·
+  <a th:href="@{/actuator/health}">/actuator/health</a>
+</footer>
+
+<script th:src="@{/js/playground.js}" defer></script>
+</body>
+</html>

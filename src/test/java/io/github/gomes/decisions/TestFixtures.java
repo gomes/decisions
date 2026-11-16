@@ -1,10 +1,13 @@
 package io.github.gomes.decisions;
 
-import io.github.gomes.decisions.model.DecisionRequest;
-import io.github.gomes.decisions.model.Option;
-import io.github.gomes.decisions.model.Question;
+import io.github.gomes.decisions.domain.DecisionRequest;
+import io.github.gomes.decisions.domain.Option;
+import io.github.gomes.decisions.domain.Question;
+
+import java.util.List;
 
 public final class TestFixtures {
+
     private TestFixtures() {
     }
 
@@ -22,7 +25,19 @@ public final class TestFixtures {
 
     public static DecisionRequest ticketWithImage() {
         DecisionRequest t = ticket();
-        return new DecisionRequest(t.input(), t.data(), java.util.List.of("https://example.com/mug.jpg"),
-                t.questions(), null);
+        return new DecisionRequest(t.input(), t.data(), List.of("https://example.com/mug.jpg"), t.questions(), null);
     }
+
+    public static final String TICKET_JSON = """
+            {
+              "input": "Meu pedido chegou com a caneca quebrada e a caixa danificada",
+              "questions": [
+                {"name": "is_damaged", "type": "yes_no", "instructions": "O item chegou danificado?",
+                 "trueWhen": "quebrada, danificada"},
+                {"name": "queue", "type": "choice", "instructions": "Qual fila?",
+                 "options": [{"value": "billing", "description": "pagamentos, reembolso"},
+                             {"value": "shipping", "description": "entrega, quebrada, danificada"}]}
+              ]
+            }
+            """;
 }

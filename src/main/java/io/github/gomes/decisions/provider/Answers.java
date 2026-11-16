@@ -1,15 +1,13 @@
 package io.github.gomes.decisions.provider;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import io.github.gomes.decisions.model.Answer;
-import io.github.gomes.decisions.model.Option;
-import io.github.gomes.decisions.model.Question;
-import io.github.gomes.decisions.model.QuestionType;
-import io.github.gomes.decisions.spi.DecisionException;
+import io.github.gomes.decisions.domain.Answer;
+import io.github.gomes.decisions.domain.Option;
+import io.github.gomes.decisions.domain.Question;
+import io.github.gomes.decisions.domain.QuestionType;
+import tools.jackson.databind.JsonNode;
 
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -41,16 +39,12 @@ public final class Answers {
             p = node.asDouble();
         } else {
             for (String f : List.of("noul", "probability", "predicate", "p_true", "yes", "true")) {
-                JsonNode v = node.get(f);
-                if (v != null && v.isNumber()) {
-                    p = v.asDouble();
-                    break;
-                }
+                p = number(node, f);
+                if (p != null) break;
             }
             if (p == null) {
-                JsonNode probs = node.path("probabilities");
-                Map<String, Double> m = probabilityMap(probs);
-                p = firstNonNull(m.get("true"), m.get("yes"));
+                Map<String, Double> m = probabilityMap(node.path("probabilities"));
+                p = m.containsKey("true") ? m.get("true") : m.get("yes");
             }
             if (p == null && node.path("value").isBoolean()) {
                 p = node.get("value").asBoolean() ? 1.0 : 0.0;
@@ -61,7 +55,7 @@ public final class Answers {
         }
         Double confidence = number(node, "confidence");
         if (confidence == null) {
-            confidence = Math.abs(2 * p - 1);
+            confidence = round(Math.abs(2 * p - 1));
         }
         return new Answer(q.name(), QuestionType.YES_NO, String.valueOf(p >= 0.5), p, null, null, confidence);
     }
@@ -71,26 +65,17 @@ public final class Answers {
         if (probs.isEmpty()) {
             probs = probabilityMap(node.path("scores"));
         }
-        // Score level probabilities may come as a bare array aligned with the levels.
-        if (probs.isEmpty() && node.path("probabilities").isArray()) {
-            JsonNode arr = node.path("probabilities");
-            if (arr.size() == q.options().size() && arr.get(0) != null && arr.get(0).isNumber()) {
-                for (int i = 0; i < arr.size(); i++) {
-                    probs.put(q.options().get(i).value(), arr.get(i).asDouble());
-                }
+        // Level probabilities may also come as a bare array aligned with the options.
+        JsonNode arr = node.path("probabilities");
+        if (probs.isEmpty() && arr.isArray() && arr.size() == q.options().size() && arr.get(0).isNumber()) {
+            for (int i = 0; i < arr.size(); i++) {
+                probs.put(q.options().get(i).value(), arr.get(i).asDouble());
             }
         }
 
-        String value = null;
-        for (String f : isScore ? List.of("level", "label", "value", "choice", "answer")
-                : List.of("choice", "value", "label", "answer", "selected")) {
-            JsonNode v = node.get(f);
-            if (v != null && v.isTextual()) {
-                value = v.asText();
-                break;
-            }
-        }
-
+        String value = firstString(node, isScore
+                ? List.of("level", "label", "value", "choice", "answer")
+                : List.of("choice", "value", "label", "answer", "selected"));
         Double score = isScore ? number(node, "score") : null;
 
         if (value == null && !probs.isEmpty()) {
@@ -121,9 +106,7 @@ public final class Answers {
             return out;
         }
         if (node.isObject()) {
-            Iterator<Map.Entry<String, JsonNode>> it = node.fields();
-            while (it.hasNext()) {
-                Map.Entry<String, JsonNode> e = it.next();
+            for (Map.Entry<String, JsonNode> e : node.properties()) {
                 if (e.getValue().isNumber()) {
                     out.put(e.getKey(), e.getValue().asDouble());
                 }
@@ -131,8 +114,9 @@ public final class Answers {
         } else if (node.isArray()) {
             for (JsonNode item : node) {
                 if (!item.isObject()) continue;
-                String key = firstText(item, "value", "label", "choice", "level", "name", "option");
-                Double p = firstNonNull(number(item, "probability"), number(item, "p"), number(item, "score"));
+                String key = firstString(item, List.of("value", "label", "choice", "level", "name", "option"));
+                Double p = number(item, "probability");
+                if (p == null) p = number(item, "p");
                 if (key != null && p != null) {
                     out.put(key, p);
                 }
@@ -149,15 +133,18 @@ public final class Answers {
             weighted += i * p;
             total += p;
         }
-        return total == 0 ? 0 : weighted / total;
+        return total == 0 ? 0 : round(weighted / total);
     }
 
     /** Difference between the two largest probabilities (1.0 = certain, 0 = tie). */
     public static double margin(Map<String, Double> probs) {
         List<Double> sorted = new ArrayList<>(probs.values());
         sorted.sort(Comparator.reverseOrder());
-        double m = sorted.size() == 1 ? sorted.get(0) : sorted.get(0) - sorted.get(1);
-        return Math.round(m * 10_000) / 10_000.0;
+        return round(sorted.size() == 1 ? sorted.get(0) : sorted.get(0) - sorted.get(1));
+    }
+
+    public static double round(double v) {
+        return Math.round(v * 10_000) / 10_000.0;
     }
 
     private static Double number(JsonNode node, String field) {
@@ -165,18 +152,10 @@ public final class Answers {
         return v != null && v.isNumber() ? v.asDouble() : null;
     }
 
-    private static String firstText(JsonNode node, String... fields) {
+    private static String firstString(JsonNode node, List<String> fields) {
         for (String f : fields) {
             JsonNode v = node.get(f);
-            if (v != null && v.isTextual()) return v.asText();
-        }
-        return null;
-    }
-
-    @SafeVarargs
-    private static <T> T firstNonNull(T... values) {
-        for (T v : values) {
-            if (v != null) return v;
+            if (v != null && v.isString()) return v.asString();
         }
         return null;
     }

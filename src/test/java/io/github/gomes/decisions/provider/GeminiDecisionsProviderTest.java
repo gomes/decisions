@@ -1,13 +1,15 @@
 package io.github.gomes.decisions.provider;
 
-import io.github.gomes.decisions.StubHttp;
 import io.github.gomes.decisions.TestFixtures;
-import io.github.gomes.decisions.http.JsonHttp;
-import io.github.gomes.decisions.model.DecisionResult;
+import io.github.gomes.decisions.domain.DecisionResult;
 import io.github.gomes.decisions.provider.gemini.GeminiDecisionsProvider;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.MediaType;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.header;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
 class GeminiDecisionsProviderTest {
 
@@ -19,39 +21,43 @@ class GeminiDecisionsProviderTest {
              }}
             """;
 
+    final MockProvider mock = new MockProvider();
+
     @Test
-    void textOnlyInputIsAString() throws Exception {
-        try (StubHttp stub = new StubHttp().reply(200, REPLY)) {
-            var p = new GeminiDecisionsProvider("g-key", stub.baseUrl(), null, new JsonHttp());
-            DecisionResult r = p.decide(TestFixtures.ticket());
+    void textOnlyInputIsAString() {
+        mock.server.expect(requestTo("https://generativelanguage.googleapis.com/v1beta/decisions"))
+                .andExpect(header("x-goog-api-key", "g-key"))
+                .andExpect(mock.captureBody())
+                .andRespond(withSuccess(REPLY, MediaType.APPLICATION_JSON));
 
-            assertEquals("/v1beta/decisions", stub.lastPath);
-            assertEquals("g-key", stub.lastHeaders.get("x-goog-api-key"));
-            assertEquals("gemini-decision-1", stub.lastBody.get("model").asText());
-            assertTrue(stub.lastBody.get("input").isTextual());
-            assertEquals("noul", stub.lastBody.at("/questions/is_damaged/type").asText());
-            assertEquals(3, stub.lastBody.size(), "only model, input and questions are allowed");
+        DecisionResult r = new GeminiDecisionsProvider("g-key", null, null, mock.restClient)
+                .decide(TestFixtures.ticket());
 
-            assertEquals(0.96, r.answer("is_damaged").confidence());
-            assertEquals("shipping", r.answer("queue").value());
-            assertEquals("high", r.answer("severity").value());
-        }
+        var b = mock.body();
+        assertThat(b.get("model").asString()).isEqualTo("gemini-decision-1");
+        assertThat(b.get("input").isString()).isTrue();
+        assertThat(b.at("/questions/is_damaged/type").asString()).isEqualTo("noul");
+        assertThat(b.propertyNames()).as("only model, input and questions are allowed")
+                .containsExactlyInAnyOrder("model", "input", "questions");
+
+        assertThat(r.answer("is_damaged").confidence()).isEqualTo(0.96);
+        assertThat(r.answer("queue").value()).isEqualTo("shipping");
+        assertThat(r.answer("severity").value()).isEqualTo("high");
     }
 
     @Test
-    void imagesBecomeParts() throws Exception {
-        try (StubHttp stub = new StubHttp().reply(200, REPLY)) {
-            var p = new GeminiDecisionsProvider("g-key", stub.baseUrl(), null, new JsonHttp());
-            p.decide(TestFixtures.ticketWithImage());
-            assertEquals("text", stub.lastBody.at("/input/0/type").asText());
-            assertEquals("image", stub.lastBody.at("/input/1/type").asText());
-            assertEquals("https://example.com/mug.jpg", stub.lastBody.at("/input/1/uri").asText());
-        }
+    void imagesBecomeParts() {
+        mock.server.expect(mock.captureBody()).andRespond(withSuccess(REPLY, MediaType.APPLICATION_JSON));
+        new GeminiDecisionsProvider("g-key", null, null, mock.restClient).decide(TestFixtures.ticketWithImage());
+        var b = mock.body();
+        assertThat(b.at("/input/0/type").asString()).isEqualTo("text");
+        assertThat(b.at("/input/1/type").asString()).isEqualTo("image");
+        assertThat(b.at("/input/1/uri").asString()).isEqualTo("https://example.com/mug.jpg");
     }
 
     @Test
     void mimeTypeFromDataUri() {
-        assertEquals("image/png", GeminiDecisionsProvider.mimeFromDataUri("data:image/png;base64,AAAA"));
-        assertNull(GeminiDecisionsProvider.mimeFromDataUri("https://x/y.png"));
+        assertThat(GeminiDecisionsProvider.mimeFromDataUri("data:image/png;base64,AAAA")).isEqualTo("image/png");
+        assertThat(GeminiDecisionsProvider.mimeFromDataUri("https://x/y.png")).isNull();
     }
 }
