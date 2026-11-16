@@ -173,6 +173,7 @@ button.link { background: none; border: none; color: var(--accent); padding: 0; 
 .answer-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; margin-bottom: 6px; }
 .answer-head .value { font-weight: 700; margin-left: auto; }
 .answers p { margin: 4px 0 0; }
+.refused { color: var(--warn); font-style: italic; font-weight: 600; }
 
 .conf { font-size: 0.75rem; padding: 1px 8px; border-radius: 999px; white-space: nowrap; }
 .conf-high { background: var(--ok-soft); color: var(--ok); }

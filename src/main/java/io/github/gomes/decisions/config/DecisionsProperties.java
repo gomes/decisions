@@ -8,12 +8,14 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
  * read from the same environment variables the app always used (OPENAI_API_KEY, GEMINI_API_KEY, ...).
  *
  * @param apiToken   when set, every {@code /api/**} call needs {@code Authorization: Bearer <token>}
+ * @param maxRetries retries on transient errors for the SDK-based providers (OpenAI, Azure OpenAI, Gemini)
  * @param playground the HTML test page at {@code /}
  * @param providers  per-provider credentials and defaults
  */
 @ConfigurationProperties("decisions")
 public record DecisionsProperties(
         String apiToken,
+        @DefaultValue("2") int maxRetries,
         @DefaultValue Playground playground,
         @DefaultValue Providers providers) {
 

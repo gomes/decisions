@@ -9,13 +9,20 @@ import io.github.gomes.decisions.provider.openai.OpenAiDecisionsProvider;
 import io.github.gomes.decisions.provider.systemone.SystemOneProvider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.boot.context.properties.bind.Binder;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.env.Environment;
 import org.springframework.web.client.RestClient;
+
+import java.time.Duration;
 
 /**
  * Creates the {@link ProviderRegistry}: a provider is enabled when its credentials are configured and it
- * is not switched off. Timeouts and other HTTP settings come from {@code spring.http.clients.*}.
+ * is not switched off.
+ *
+ * <p>OpenAI, Azure OpenAI and Gemini use their official SDKs; TypeSafe Jev and Microsoft-Decision-1 (System
+ * One, no Java SDK) use Spring's {@link RestClient}. Timeouts come from {@code spring.http.clients.*}.
  */
 @Configuration(proxyBeanMethods = false)
 public class DecisionProvidersConfiguration {
@@ -23,7 +30,12 @@ public class DecisionProvidersConfiguration {
     private static final Logger log = LoggerFactory.getLogger(DecisionProvidersConfiguration.class);
 
     @Bean
-    ProviderRegistry providerRegistry(DecisionsProperties properties, RestClient.Builder restClientBuilder) {
+    ProviderRegistry providerRegistry(DecisionsProperties properties, RestClient.Builder restClientBuilder,
+                                      Environment environment) {
+        // The SDK-based providers have their own HTTP stack: give them the same read timeout as RestClient.
+        Duration timeout = Binder.get(environment).bind("spring.http.clients.read-timeout", Duration.class)
+                .orElse(Duration.ofSeconds(30));
+        int retries = properties.maxRetries();
         RestClient http = restClientBuilder.build();
         DecisionsProperties.Providers p = properties.providers();
         ProviderRegistry registry = new ProviderRegistry();
@@ -34,15 +46,15 @@ public class DecisionProvidersConfiguration {
         }
         if (usable(p.openai())) {
             registry.register(ProviderKind.OPENAI, OpenAiDecisionsProvider.openAi(
-                    p.openai().apiKey(), p.openai().baseUrl(), p.openai().model(), http));
+                    p.openai().apiKey(), p.openai().baseUrl(), p.openai().model(), timeout, retries));
         }
         if (usable(p.azureOpenai()) && p.azureOpenai().hasEndpoint()) {
             registry.register(ProviderKind.AZURE_OPENAI, OpenAiDecisionsProvider.azure(
-                    p.azureOpenai().endpoint(), p.azureOpenai().apiKey(), p.azureOpenai().model(), http));
+                    p.azureOpenai().endpoint(), p.azureOpenai().apiKey(), p.azureOpenai().model(), timeout, retries));
         }
         if (usable(p.gemini())) {
             registry.register(ProviderKind.GEMINI, new GeminiDecisionsProvider(
-                    p.gemini().apiKey(), p.gemini().baseUrl(), p.gemini().model(), http));
+                    p.gemini().apiKey(), p.gemini().baseUrl(), p.gemini().model()));
         }
         if (usable(p.microsoft()) && p.microsoft().hasEndpoint()) {
             registry.register(ProviderKind.MICROSOFT, SystemOneProvider.microsoftFoundry(
